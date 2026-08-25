@@ -5,6 +5,11 @@ import {
   Paperclip,
   Square,
 } from 'lucide-react';
+import {
+  callBaseAIStream,
+  DEFAULT_MODEL,
+  AIProviderError,
+} from '../../providers/aiProvider';
 
 interface ChatMessage {
   id: string;
@@ -23,7 +28,7 @@ export default function ChatView({ chatTitle }: ChatViewProps) {
 
   const canSend = input.trim().length > 0 && !isGenerating;
 
-  const handleSend = () => {
+  const handleSend = async () => {
     const text = input.trim();
 
     if (!text || isGenerating) {
@@ -36,23 +41,92 @@ export default function ChatView({ chatTitle }: ChatViewProps) {
       content: text,
     };
 
+    const assistantId = crypto.randomUUID();
+
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
-
-    // 現段階ではAI接続前なので仮の応答
     setIsGenerating(true);
 
-    window.setTimeout(() => {
-      const assistantMessage: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content:
-          'メッセージを受け取りました。次の段階でここをHDI Engine → OpenRouter → GPT-OSS 120Bに接続します。',
-      };
+    // APIキーは一時的に環境変数から取得
+    const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
 
-      setMessages((prev) => [...prev, assistantMessage]);
+    if (!apiKey) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: assistantId,
+          role: 'assistant',
+          content:
+            'OpenRouter APIキーが設定されていません。\n\n.env.local に VITE_OPENROUTER_API_KEY を設定してください。',
+        },
+      ]);
+
       setIsGenerating(false);
-    }, 500);
+      return;
+    }
+
+    // まず現在の会話をBase AI用の形式に変換
+    const previousMessages = messages.map((message) => ({
+      role: message.role,
+      content: message.content,
+    }));
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: assistantId,
+        role: 'assistant',
+        content: '',
+      },
+    ]);
+
+    try {
+      await callBaseAIStream({
+        apiKey,
+        model: DEFAULT_MODEL,
+        systemPrompt:
+          'あなたはTaskHDIのBase AIです。ユーザーと自然に日本語で会話してください。',
+        messages: [
+          ...previousMessages,
+          {
+            role: 'user',
+            content: text,
+          },
+        ],
+        temperature: 0.7,
+        stream: true,
+        onToken: (chunk) => {
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === assistantId
+                ? {
+                    ...message,
+                    content: message.content + chunk,
+                  }
+                : message,
+            ),
+          );
+        },
+      });
+    } catch (error) {
+      const message =
+        error instanceof AIProviderError
+          ? error.message
+          : 'AIとの通信中にエラーが発生しました。';
+
+      setMessages((prev) =>
+        prev.map((item) =>
+          item.id === assistantId
+            ? {
+                ...item,
+                content: `⚠️ ${message}`,
+              }
+            : item,
+        ),
+      );
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleKeyDown = (
@@ -60,7 +134,7 @@ export default function ChatView({ chatTitle }: ChatViewProps) {
   ) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      handleSend();
+      void handleSend();
     }
   };
 
@@ -70,14 +144,12 @@ export default function ChatView({ chatTitle }: ChatViewProps) {
 
   return (
     <main className="chat-view">
-      {/* Header */}
       <header className="chat-view__header">
         <div className="chat-view__title">
           {chatTitle || '新規チャット'}
         </div>
       </header>
 
-      {/* Messages */}
       <section className="chat-view__messages">
         {messages.length === 0 ? (
           <div className="chat-view__empty">
@@ -107,21 +179,10 @@ export default function ChatView({ chatTitle }: ChatViewProps) {
                 </div>
               </div>
             ))}
-
-            {isGenerating && (
-              <div className="chat-message chat-message--assistant">
-                <div className="chat-message__content chat-message__loading">
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              </div>
-            )}
           </div>
         )}
       </section>
 
-      {/* Input */}
       <div className="chat-view__input-area">
         <div className="chat-input">
           <textarea
@@ -160,7 +221,7 @@ export default function ChatView({ chatTitle }: ChatViewProps) {
               <button
                 type="button"
                 className="chat-input__send"
-                onClick={handleSend}
+                onClick={() => void handleSend()}
                 disabled={!canSend}
                 aria-label="送信"
               >
