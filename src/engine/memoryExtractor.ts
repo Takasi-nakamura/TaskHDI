@@ -1,5 +1,5 @@
 import type { ChatMessage, MemoryExtractionResult, MemoryItem } from '../types';
-import { callBaseAI } from './aiProvider';
+import { callBaseAI } from '../providers/aiProvider';
 
 /**
  * HDI Engine: 自律学習モジュール（設計書 4章）
