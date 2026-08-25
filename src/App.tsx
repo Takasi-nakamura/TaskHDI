@@ -3,16 +3,26 @@ import Sidebar from './components/sidebar/Sidebar';
 import ChatView from './components/chat/ChatView';
 import './styles/app.css';
 
+export interface AppChat {
+  id: string;
+  title: string;
+}
+
 export default function App() {
-  const [chats, setChats] = useState<string[]>([]);
+  const [chats, setChats] = useState<AppChat[]>([]);
   const [activeChat, setActiveChat] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const handleNewChat = () => {
-    const id = `新規チャット ${chats.length + 1}`;
+    const number = chats.length + 1;
 
-    setChats((prev) => [...prev, id]);
-    setActiveChat(id);
+    const newChat: AppChat = {
+      id: crypto.randomUUID(),
+      title: `新規チャット ${number}`,
+    };
+
+    setChats((prev) => [...prev, newChat]);
+    setActiveChat(newChat.id);
   };
 
   const handleSelectChat = (chatId: string) => {
@@ -23,18 +33,29 @@ export default function App() {
     setSettingsOpen(true);
   };
 
+  const activeChatData =
+    chats.find((chat) => chat.id === activeChat) ?? null;
+
   return (
     <div className="taskhdi-app">
       <Sidebar
-        chats={chats}
-        activeChat={activeChat}
+        chats={chats.map((chat) => chat.title)}
+        activeChat={activeChatData?.title ?? null}
         onNewChat={handleNewChat}
-        onSelectChat={handleSelectChat}
+        onSelectChat={(title) => {
+          const chat = chats.find((item) => item.title === title);
+
+          if (chat) {
+            handleSelectChat(chat.id);
+          }
+        }}
         onOpenSettings={handleOpenSettings}
       />
 
       <main className="taskhdi-main">
-        <ChatView chatTitle={activeChat ?? undefined} />
+        <ChatView
+          chatTitle={activeChatData?.title}
+        />
       </main>
 
       {settingsOpen && (
